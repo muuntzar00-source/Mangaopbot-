@@ -1,11 +1,11 @@
 import os
 import re
-import asyncio
+import cloudscraper
 from pyrogram import Client, filters
-from playwright.async_api import async_playwright
+from PIL import Image, ImageDraw
 from fpdf import FPDF
-from PIL import Image
-import requests
+
+# ================= CONFIG =================
 
 API_ID = 37558426
 API_HASH = "5b02bea1ece40e219ecd7b5148cf08a2"
@@ -14,10 +14,20 @@ BOT_TOKEN = "8777225560:AAFvgc9GFNFdS0HqqrwQ2BeNOYTtfps7CD0"
 OWNER_ID = 1287794053
 RIGHTS = "@pp4p44"
 
-app = Client("manga_bot", API_ID, API_HASH, BOT_TOKEN)
+app = Client(
+    "manga_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
+
+scraper = cloudscraper.create_scraper()
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 TEMP = "temp"
 os.makedirs(TEMP, exist_ok=True)
+
+# ================= CLEAN =================
 
 def clean():
     for f in os.listdir(TEMP):
@@ -26,57 +36,50 @@ def clean():
         except:
             pass
 
+# ================= EXTRACT IMAGES =================
 
-# ================= BROWSER SCRAPER =================
+def get_images(url):
 
-async def get_images(url):
-    images = []
+    r = scraper.get(url, headers=HEADERS, timeout=60)
+    html = r.text
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+    images = set()
 
-        await page.goto(url, timeout=60000)
-        await page.wait_for_timeout(8000)  # wait JS load
+    # روابط مباشرة
+    images.update(re.findall(r'https?://[^"\']+\.(?:jpg|jpeg|png|webp)', html))
 
-        imgs = await page.eval_on_selector_all(
-            "img",
-            "els => els.map(e => e.src || e.getAttribute('data-src'))"
-        )
+    # من scripts
+    images.update(re.findall(r'https?://[^"\']+\.(?:jpg|jpeg|png|webp)', html, re.S))
 
-        for img in imgs:
-            if not img:
-                continue
+    clean_list = []
 
-            if any(x in img.lower() for x in ["logo", "ads", "icon"]):
-                continue
+    for img in images:
+        if any(x in img.lower() for x in ["logo", "ads", "icon", "avatar"]):
+            continue
+        clean_list.append(img)
 
-            if img.startswith("//"):
-                img = "https:" + img
-
-            if img.endswith((".jpg", ".png", ".webp", ".jpeg")):
-                images.append(img)
-
-        await browser.close()
-
-    return list(dict.fromkeys(images))
-
+    return list(dict.fromkeys(clean_list))
 
 # ================= PDF =================
 
 def create_pdf(images, name):
+
     pdf = FPDF()
     i = 0
 
     for url in images:
         try:
-            r = requests.get(url, timeout=30)
+            r = scraper.get(url, timeout=30)
 
             path = f"{TEMP}/{i}.jpg"
             with open(path, "wb") as f:
                 f.write(r.content)
 
             img = Image.open(path).convert("RGB")
+
+            draw = ImageDraw.Draw(img)
+            draw.text((20, 20), RIGHTS, fill=(255, 0, 0))
+
             img.save(path, quality=85)
 
             pdf.add_page()
@@ -91,10 +94,10 @@ def create_pdf(images, name):
     pdf.output(file)
     return file
 
+# ================= NAME =================
 
 def manga_name(url):
     return url.strip("/").split("/")[-2]
-
 
 # ================= BOT =================
 
@@ -107,17 +110,17 @@ async def handler(_, msg):
     url = msg.text.strip()
 
     if "3asq.org" not in url:
-        return await msg.reply_text("❌ هذا النظام يعمل فقط على العاشق")
+        return await msg.reply_text("❌ هذا البوت يعمل فقط على موقع العاشق")
 
-    status = await msg.reply_text("☁️ جاري فتح الموقع في سيرفر سحابي...")
+    status = await msg.reply_text("⏳ جاري التحميل...")
 
     try:
         clean()
 
-        images = await get_images(url)
+        images = get_images(url)
 
         if not images:
-            return await status.edit("❌ لم يتم العثور على صفحات")
+            return await status.edit("❌ لم يتم العثور على صور")
 
         await status.edit(f"📥 تم العثور على {len(images)} صفحة")
 
