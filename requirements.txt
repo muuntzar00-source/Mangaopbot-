@@ -1,0 +1,6 @@
+pyrogram
+tgcrypto
+playwright
+fpdf
+pillow
+requests
