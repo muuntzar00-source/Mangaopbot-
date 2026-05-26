@@ -1,6 +1,6 @@
 pyrogram
 tgcrypto
-playwright
+cloudscraper
 fpdf
 pillow
 requests
